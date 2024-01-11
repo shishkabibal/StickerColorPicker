@@ -1,6 +1,8 @@
 # StickerColorPicker
 
-![Preview](Preview.png)
+<p align="center">
+  <img src="Preview.png" alt="Preview" width=50% height=50%>
+</p>
 
 # Information:
 
