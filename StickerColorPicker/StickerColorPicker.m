@@ -374,6 +374,46 @@ StickerColorPicker* plugin;
 @end
 
 
+#pragma mark - Color Randomizing
+
+@interface ColorRandomizer : NSObject
+
++ (NSColor *)randomColor;
++ (NSColor *)adjustColor:(NSColor *)color withHueOffset:(CGFloat)hueOffset saturationOffset:(CGFloat)saturationOffset lightnessOffset:(CGFloat)lightnessOffset;
+
+@end
+
+@implementation ColorRandomizer
+
++ (NSColor *)randomColor {
+    CGFloat red = (arc4random_uniform(128) + 127) / 255.0;
+    CGFloat green = (arc4random_uniform(128) + 127) / 255.0;
+    CGFloat blue = (arc4random_uniform(128) + 127) / 255.0;
+    return [NSColor colorWithRed:red green:green blue:blue alpha:1.0];
+}
+
++ (NSColor *)adjustColor:(NSColor *)color withHueOffset:(CGFloat)hueOffset saturationOffset:(CGFloat)saturationOffset lightnessOffset:(CGFloat)lightnessOffset {
+    CGFloat hue, saturation, brightness, alpha;
+    [[color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha];
+    
+    hue += hueOffset;
+    if (hue > 1.0) hue -= 1.0;
+    if (hue < 0.0) hue += 1.0;
+    
+    saturation += saturationOffset;
+    if (saturation > 1.0) saturation = 1.0;
+    if (saturation < 0.0) saturation = 0.0;
+    
+    brightness += lightnessOffset;
+    if (brightness > 1.0) brightness = 1.0;
+    if (brightness < 0.0) brightness = 0.0;
+    
+    return [NSColor colorWithCalibratedHue:hue saturation:saturation brightness:brightness alpha:alpha];
+}
+
+@end
+
+
 #pragma mark - Swizzle Handling
 
 ZKSwizzleInterface(BS_SNMenuController, SNMenuController, NSObject)
@@ -438,7 +478,7 @@ ZKSwizzleInterface(BS_SNMenuController, SNMenuController, NSObject)
         // Setup popover
         NSPopover* popover = [[NSPopover alloc] init];
         popover.behavior = NSPopoverBehaviorTransient;
-        NSView* popoverView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 150, 160)];
+        NSView* popoverView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 160, 200)];
         popover.contentViewController = [[NSViewController alloc] init];
         popover.contentViewController.view = popoverView;
         
@@ -488,24 +528,43 @@ ZKSwizzleInterface(BS_SNMenuController, SNMenuController, NSObject)
         [controlWell setTarget:self];
         [controlWell setAction:@selector(colorWellDidChange:)];
         
+        NSButton *randomButton = [[NSButton alloc] initWithFrame:NSZeroRect];
+        [randomButton setButtonType:NSButtonTypeMomentaryPushIn];
+        [randomButton setTitle:@"Random"];
+        [randomButton fittingSize];
+        [randomButton setAction:@selector(randomizeColors:)];
+        [randomButton setTarget:self];
+
         // Setup grid
         NSArray* gridRows = @[
+            @[],
             @[stickyLabel, stickyWell],
             @[spineLabel, spineWell],
             @[highlightLabel, highlightWell],
-            @[controlLabel, controlWell]
+            @[controlLabel, controlWell],
+            @[],
+            @[randomButton]
         ];
         NSGridView *gridView = [NSGridView gridViewWithViews:gridRows];
         gridView.translatesAutoresizingMaskIntoConstraints = NO;
         gridView.rowSpacing = 10.0;
         gridView.columnSpacing = 20.0;
         [popoverView addSubview:gridView];
-        
+
+        // Merge the cells in the row containing the randomButton
+        NSGridRow *buttonRow = [gridView rowAtIndex:6];
+        [buttonRow mergeCellsInRange:NSMakeRange(0, 2)];
+
+        // Center the randomButton within the merged cell
+        NSGridCell *buttonCell = [buttonRow cellAtIndex:0];
+        buttonCell.xPlacement = NSGridCellPlacementCenter;
+
+        // Center the grid view within the popover view
         [gridView.centerXAnchor constraintEqualToAnchor:popoverView.centerXAnchor].active = YES;
         [gridView.centerYAnchor constraintEqualToAnchor:popoverView.centerYAnchor].active = YES;
         [gridView.topAnchor constraintGreaterThanOrEqualToAnchor:popoverView.topAnchor].active = YES;
         [gridView.bottomAnchor constraintLessThanOrEqualToAnchor:popoverView.bottomAnchor].active = YES;
-        
+
         [gridView columnAtIndex:0].xPlacement = NSGridCellPlacementTrailing;
         gridView.rowAlignment = NSGridRowAlignmentFirstBaseline;
         
@@ -577,6 +636,38 @@ ZKSwizzleInterface(BS_SNMenuController, SNMenuController, NSObject)
         [document setHighlightColor:[colorWell color]];
     } else if (colorWell.tag == 3) {
         [document setControlColor:[colorWell color]];
+    }
+    
+    // Refresh window UI
+    [document updateWindowColor];
+}
+
+- (void)randomizeColors:(NSButton*)button {
+    // Get selected document & preexisting popover
+    NSWindow* window = [NSApp keyWindow];
+    SNDocument* document = window.windowController.document;
+    PopoversManager* popoversManager = [PopoversManager sharedManager];
+    Popover* preexistingPopover = [popoversManager popoverForWindow:window];
+    
+    // Define colors based on generated random color
+    NSColor *randomColor = [ColorRandomizer randomColor];
+    NSColor *stickyColor = [ColorRandomizer adjustColor:randomColor withHueOffset:0 saturationOffset:0 lightnessOffset:0.3];
+    NSColor *spineColor = [ColorRandomizer adjustColor:randomColor withHueOffset:0 saturationOffset:0.1 lightnessOffset:-0.1];
+    NSColor *highlightColor = [ColorRandomizer adjustColor:randomColor withHueOffset:0 saturationOffset:0.1 lightnessOffset:0.1];
+    NSColor *controlColor = [ColorRandomizer adjustColor:spineColor withHueOffset:0 saturationOffset:0.1 lightnessOffset:-0.15];
+    
+    // Set sticky note colors
+    [document setStickyColor:stickyColor];
+    [document setSpineColor:spineColor];
+    [document setHighlightColor:highlightColor];
+    [document setControlColor:controlColor];
+    
+    // Set color well colors
+    if (preexistingPopover) {
+        [preexistingPopover.stickyWell setColor:stickyColor];
+        [preexistingPopover.spineWell setColor:spineColor];
+        [preexistingPopover.highlightWell setColor:highlightColor];
+        [preexistingPopover.controlWell setColor:controlColor];
     }
     
     // Refresh window UI
